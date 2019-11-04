@@ -1,0 +1,238 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.21.1/babel.min.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+</head>
+
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="#"></a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </nav>
+    <section style="padding:40px">
+        <div class="container">
+            <h1>Dashboard</h1>
+        </div>
+    </section>
+    <div id="root"></div>
+    <!-- Div for table data -->
+
+    <div class="row" style="margin-top:50 ;">
+        <div class="col-lg-8 offset-lg-2" style="height:500">
+            <div id="chart" style=></div>
+            <!-- Div for the schedule chart -->
+        </div>
+    </div>
+
+
+    <script type="text/babel">
+        class Main extends React.Component {
+            constructor(props){
+                super(props)
+                this.drawChart.bind(this)
+                this.getFreeDates.bind(this)
+                this.toggleFreeSlots.bind(this)
+                this.state = {
+                    data:"",
+                    isLoading:true,
+                    free_dates:"",
+                    people:"",
+                    addFreeDates:false,
+                    button_text:"Show free slots"
+                }
+            }
+
+            componentDidMount(){
+                let vm = this;
+                // Fetch required data 
+                fetch("https://totalcloud-static.s3.amazonaws.com/intern.json", {
+                    method:'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                }).then(function(response) {
+                    return response.json()
+                }).then(function(result) {
+                    // Save fetched data as a state prop
+                    vm.setState({
+                        data:result,
+                    })
+                }).then(function(){
+                    // Process free dates once we recieve data
+                    vm.getFreeDates()
+                }).then(function(){
+                    vm.setState({
+                        isLoading:false
+                    })
+                })
+            }
+
+            getFreeDates(){
+                var dates = []
+                var people = []
+                // Adds all dates (starts and ends) into an array along with their index to identify the pair
+                this.state.data.map(function(info, index){
+                    dates.push([new Date(parseInt(info.start.slice(6, 10)), parseInt(info.start.slice(3, 5)), parseInt(info.start.slice(0, 2))),
+                                index])
+                    dates.push([new Date(parseInt(info.end.slice(6, 10)), parseInt(info.end.slice(3, 5)), parseInt(info.end.slice(0, 2))),
+                                index])
+                    if (!people.includes(info.name)){
+                        people.push(info.name)
+                    }
+                })
+                // sort array based on the dates
+                var sorted = dates.sort(function(a,b){return a[0] - b[0]})
+                var track_index = []
+                var free_dates = []
+                // Algorithm for finding free slots.
+                // We add time slot index to an array, if we encounter another time with the same index, we pop the element
+                // from this array (track_index)
+                // If the track_index is empty at any point of time => implies an empty time slot
+                // this empty time slot is added to the free_dates array
+                for(var i = 0; i < dates.length; i++){
+                    if(!track_index.includes(dates[i][1])){
+                        if(track_index.length == 0 && i != 0){
+                            free_dates.push([dates[i-1][0], dates[i][0]])
+                        } 
+                        track_index.push(dates[i][1])
+                    } else {
+                        track_index.splice(track_index.indexOf(dates[i][1]), 1)
+                    }      
+                }
+                // updating stating prop
+                this.setState({free_dates:free_dates, people:people})
+            }
+
+            // draws our required chart
+            drawChart(){
+                let vm = this;
+                // loading of required packages
+                google.charts.load("current", {packages:["timeline"]});
+                google.charts.setOnLoadCallback(function(){
+                    var container = document.getElementById('chart');
+                    var chart = new google.visualization.Timeline(container);
+                    var dataTable = new google.visualization.DataTable();
+                    dataTable.addColumn({ type: 'string', id: 'Name' });
+                    dataTable.addColumn({ type: 'date', id: 'Start' });
+                    dataTable.addColumn({ type: 'date', id: 'End' });
+                    var colors = []
+                    
+                    // Data is added to the chart
+                    vm.state.data.map(function(info, index){
+                        dataTable.addRow(
+                            [info.name, 
+                            new Date(parseInt(info.start.slice(6, 10)), parseInt(info.start.slice(3, 5)), parseInt(info.start.slice(0, 2))), 
+                            new Date(parseInt(info.end.slice(6, 10)), parseInt(info.end.slice(3, 5)), parseInt(info.end.slice(0, 2)))]
+                        )
+                        colors.push('#cbb69d')
+                    })
+
+                    // If we wish to display the free slots we add the data. determined by a state prop
+                    if(vm.state.addFreeDates){
+                        for(var j = 0; j < vm.state.free_dates.length; j++ ){
+                            dataTable.addRow(
+                                ["free slots available",
+                                vm.state.free_dates[j][0],
+                                vm.state.free_dates[j][1]]
+                            )
+                            colors.push('#8d8')
+                        }
+                    }
+
+                    var options = {
+                        'height':600,
+                    }
+
+                    chart.draw(dataTable, options);
+                });
+            }
+
+            // button toggle function for showing free slots
+            toggleFreeSlots = () => {
+                if(this.state.addFreeDates){
+                    this.setState({addFreeDates:false, button_text:"Show free slots"})
+                } else {
+                    this.setState({addFreeDates:true, button_text:"Hide free slots"})
+                }
+            }
+
+            render() {
+                if(!this.state.isLoading){
+                    this.drawChart()
+                    return (
+                        // simple table header
+                        <div className="container">
+                            <div className="row">
+                                <div className="col-lg-4 offset-lg-2">
+                                    <h5>Intern assignments</h5>
+                                </div>
+                                <div className="col-lg-2">
+                                    <h5>Start Date</h5>
+                                </div>
+                                <div className="col-lg-2">
+                                    <h5>End Date</h5>
+                                </div>
+                            </div>
+                            {
+                                // iterates through data list to generate table
+                                this.state.data.map(function(info, index){
+                                    return(
+                                        <div key={index} className="row">
+                                                <div className="col-lg-1 offset-lg-2">
+                                                    {info.id}
+                                                </div>
+                                                <div className="col-lg-1">
+                                                        <div className="checkbox">
+                                                            <label><input type="checkbox" value="" /></label>
+                                                        </div>
+                                                </div>
+                                                <div className="col-lg-2">
+                                                    {info.name}
+                                                </div>
+                                                <div className="col-lg-2">
+                                                    {info.start}
+                                                </div>
+                                                <div className="col-lg-2">
+                                                    {info.end}
+                                                </div>
+                                        </div>
+                                    )
+                                })
+                            }
+                            <div className="row" style={{marginTop:20}}>
+                                <button className="btn btn-secondary" type="button" onClick={this.toggleFreeSlots}>
+                                    {this.state.button_text}
+                                </button>
+                                <p style={{marginTop:20}}>Note:- Free slots are displayed at the bottom of the following chart. This is because Google charts
+                                does not allow elements in a "coloumn" to have the same color, thus making the chart hard to understand if 
+                                done otherwise</p>
+                            </div>
+                        </div>
+                    );
+                } else {
+                    // Data has not been fetched and preprocessed yet
+                    return <p>Loading...</p>
+                }
+            }
+        }
+        ReactDOM.render(
+            <Main />,
+            document.getElementById('root')
+        );
+    </script>
+
+
+
+</body>
+
+</html>
